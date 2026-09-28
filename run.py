@@ -74,7 +74,7 @@ def main():
     print("GPU:", torch.cuda.get_device_name(0))
 
     launch = build(args.kernel)
-    M, N, K = args.M, args.N, args.K
+    M, K, N = args.M, args.K, args.N
 
     torch.manual_seed(args.seed)
     A = torch.randn(M, K, device="cuda", dtype=torch.float32)
@@ -88,7 +88,7 @@ def main():
     ref = args.alpha * (A @ B) + args.beta * C0
     max_err = (C - ref).abs().max().item()
     ok = torch.allclose(C, ref, rtol=1e-3, atol=1e-2)
-    print(f"{args.kernel}  M={M} N={N} K={K}  alpha={args.alpha} beta={args.beta}")
+    print(f"{args.kernel}  M={M} K={K} N={N} alpha={args.alpha} beta={args.beta}")
     print(f"correct: {ok}  (max abs err = {max_err:.3e})")
 
     # timing (values in C drift if beta != 0, which doesn't affect timing)

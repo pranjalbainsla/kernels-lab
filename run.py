@@ -2,7 +2,7 @@
 torch.matmul, and times it against cuBLAS.
 
 Examples:
-    python run.py  # sgemm_naive, 4092^3
+    python run.py  # sgemm_naive, 4096^3
     python run.py --kernel sgemm_naive --M 1024 --N 2048 --K 512
     python run.py --alpha 2.0 --beta 0.5 --iters 10
 """
@@ -59,9 +59,9 @@ def time_ms(fn, warmup, iters):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--kernel", default="sgemm_naive")
-    p.add_argument("--M", type=int, default=4092)
-    p.add_argument("--N", type=int, default=4092)
-    p.add_argument("--K", type=int, default=4092)
+    p.add_argument("--M", type=int, default=4096)
+    p.add_argument("--N", type=int, default=4096)
+    p.add_argument("--K", type=int, default=4096)
     p.add_argument("--alpha", type=float, default=1.0)
     p.add_argument("--beta", type=float, default=0.0)
     p.add_argument("--warmup", type=int, default=2)

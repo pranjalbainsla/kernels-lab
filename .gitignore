@@ -1,0 +1,4 @@
+# Parallel reduction
+kernels_impl/reduce_naive.py
+kernels_impl/reduce_optimized.py
+

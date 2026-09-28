@@ -2,7 +2,7 @@
 torch.matmul, and times it against cuBLAS.
 
 Examples:
-    python run.py                                   # sgemm_naive, 4092^3
+    python run.py  # sgemm_naive, 4092^3
     python run.py --kernel sgemm_naive --M 1024 --N 2048 --K 512
     python run.py --alpha 2.0 --beta 0.5 --iters 10
 """
@@ -13,11 +13,11 @@ from pathlib import Path
 import torch
 from torch.utils.cpp_extension import load_inline
 
-KERNEL_DIR = Path(__file__).parent / "kernels"
+KERNEL_DIR = Path(__file__).parent / "kernels_impl"
 
 
 def build(kernel: str):
-    """Compile kernels/<kernel>.cu and return the module holding launch_<kernel>."""
+    """Compile kernels_impl/<kernel>.cu and return the module holding launch_<kernel>."""
     src_path = KERNEL_DIR / f"{kernel}.cu"
     if not src_path.exists():
         available = sorted(p.stem for p in KERNEL_DIR.glob("*.cu"))

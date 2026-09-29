@@ -10,7 +10,7 @@ __global__ void sgemm_naive(int M, int N, int K, float alpha, const float *A, co
   if (x < M && y < N) {
     float tmp = 0.0f;
     for (int i = 0; i < K; ++i) {
-      # A and B are row-major, so we need to index accordingly
+      // A and B are row-major, so we need to index accordingly
       tmp += A[x * K + i] * B[i * N + y];
     }
     C[x * N + y] = alpha * tmp + beta * C[x * N + y];

@@ -16,7 +16,7 @@ from torch.utils.cpp_extension import load_inline
 KERNEL_DIR = Path(__file__).parent / "kernels_impl"
 
 
-def build(kernel: str):
+def build(kernel: str, verbose: bool = False):
     """Compile kernels_impl/<kernel>.cu and return the module holding launch_<kernel>."""
     src_path = KERNEL_DIR / f"{kernel}.cu"
     if not src_path.exists():
@@ -33,7 +33,8 @@ def build(kernel: str):
             cpp_sources=decl,
             cuda_sources=src_path.read_text(),
             functions=[fn],
-            verbose=False,
+            extra_cuda_cflags=["--ptxas-options=-v"] if verbose else [],
+            verbose=verbose,
         ),
         fn,
     )
@@ -67,13 +68,14 @@ def main():
     p.add_argument("--warmup", type=int, default=2)
     p.add_argument("--iters", type=int, default=5, help="timed runs of your kernel")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--verbose", type=bool, default=False)
     args = p.parse_args()
 
     assert torch.cuda.is_available(), "No GPU found"
     torch.backends.cuda.matmul.allow_tf32 = False  # fair FP32 cuBLAS baseline
     print("GPU:", torch.cuda.get_device_name(0))
 
-    launch = build(args.kernel)
+    launch = build(args.kernel, verbose=args.verbose)
     M, K, N = args.M, args.K, args.N
 
     torch.manual_seed(args.seed)

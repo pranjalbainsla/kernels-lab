@@ -1,4 +1,9 @@
 # Notes
+**Ceilings** 
+```text
+Tesla T4: Measured bandwidth: 236.0 GB/s  (300-320 theoretical).
+Tesla T4: Measured FP32 throughput: 4.21 TFLOPS (8.1 theo). 
+```
 
 1) Naive SGEMM
 ```text
@@ -18,4 +23,14 @@
     sgemm_coalesced:    253.52 ms      540.5 GFLOPS
     cuBLAS      :     34.74 ms     3944.4 GFLOPS
     sgemm_coalesced is 13.7% of cuBLAS
+```
+
+3) Shared memory cache blocking
+```text
+    GPU: Tesla T4
+    sgemm_smem  M=4096 K=4096 N=4096 alpha=1.0 beta=0.0
+    correct: True  (max abs err = 0.000e+00)
+    sgemm_smem  :    147.91 ms      929.2 GFLOPS
+    cuBLAS      :     32.02 ms     4292.8 GFLOPS
+    sgemm_smem is 21.6% of cuBLAS
 ```

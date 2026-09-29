@@ -9,6 +9,7 @@ constexpr int BN = 64;
 constexpr int BK = 8;
 constexpr int TM = 8;
 constexpr int TN = 8;
+constexpr int NUM_THREADS = (BM * BN) / (TM * TN);
 
 __global__ void sgemm_2D_blocktile(int M, int K, int N, float alpha, const float *A, const float *B, float beta, float *C) {
 
@@ -18,8 +19,8 @@ __global__ void sgemm_2D_blocktile(int M, int K, int N, float alpha, const float
     const int cRow = blockIdx.x;
     const int cCol = blockIdx.y;
 
-    const int threadRow = threadIdx.x / BN;   // 0..(BM/TM - 1)
-    const int threadCol = threadIdx.x % BN;   // 0..(BN/TN - 1)
+    const int threadRow = threadIdx.x / (BN/TN);   // 0..(BM/TM - 1)
+    const int threadCol = threadIdx.x % (BN/TN);   // 0..(BN/TN - 1)
 
     // indices for loading A (BM x BK) and B (BK x BN) into shared memory
     const int innerRowA = threadIdx.x / BK;
@@ -40,10 +41,10 @@ __global__ void sgemm_2D_blocktile(int M, int K, int N, float alpha, const float
     // outer-most loop over block tiles
     for (uint bkIdx = 0; bkIdx < K; bkIdx += BK) {
         // populate the SMEM caches
-        for (uint loadOffset = 0; loadOffset < BM; loadOffset += K) {
+        for (uint loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS/BK) {
             As[(innerRowA + loadOffset) * BK + innerColA] = A[(innerRowA + loadOffset) * K + innerColA];
         }
-        for (uint loadOffset = 0; loadOffset < BK; loadOffset += N) {
+        for (uint loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS/BN) {
             Bs[(innerRowB + loadOffset) * BN + innerColB] = B[(innerRowB + loadOffset) * N + innerColB];
         }
         __syncthreads();
@@ -85,7 +86,7 @@ void launch_sgemm_2D_blocktile(torch::Tensor A, torch::Tensor B, torch::Tensor C
     const int K = A.size(1);
     const int N = B.size(1);
 
-    dim3 block((BM * BN) / (TM * TN));   // e.g. 64*64/8*8 = 64 threads
+    dim3 block(NUM_THREADS); 
     dim3 grid(CEIL_DIV(M, BM), CEIL_DIV(N, BN));
     cudaStream_t stream = c10::cuda::getCurrentCUDAStream();
     sgemm_2D_blocktile<<<grid, block, 0, stream>>>(M, K, N, alpha, A.data_ptr<float>(), B.data_ptr<float>(), beta, C.data_ptr<float>());

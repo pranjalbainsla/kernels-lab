@@ -34,3 +34,9 @@ Tesla T4: Measured FP32 throughput: 4.21 TFLOPS (8.1 theo).
     cuBLAS      :     32.02 ms     4292.8 GFLOPS
     sgemm_smem is 21.6% of cuBLAS
 ```
+Compiling with --ptxas-options=-v:  
+```text
+ptxas info    : Used 39 registers, used 1 barriers, 8192 bytes smem, 400 bytes cmem[0]
+ptxas info    : Compile time = 77.160 ms
+```
+TODO: Find what the kernel is limited by (shared memory/SM, the number of threads per block, the number of registers per thread). That'll give you the upper limit of how many block you can load per SM. Final occupancy can then be calculated as num active warps / max active warps per multiprocessor

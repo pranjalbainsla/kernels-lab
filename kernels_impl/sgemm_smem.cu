@@ -36,7 +36,7 @@ __global__ void sgemm_smem(int M, int K, int N, float alpha, const float *A, con
     B += BLOCKSIZE * N;
 
     for (int dotIdx = 0; dotIdx < BLOCKSIZE; ++dotIdx) {
-        tmp += As[threadRow * BLOCKSIZE + dotIdx] * Bs[dotIdx * BLOCKSIZE + threadCol];
+      tmp += As[threadRow * BLOCKSIZE + dotIdx] * Bs[dotIdx * BLOCKSIZE + threadCol];
     }
     // need to sync again at the end, to avoid faster threads
     // fetching the next block into the cache before slower threads are done

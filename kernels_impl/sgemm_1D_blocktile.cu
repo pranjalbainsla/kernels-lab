@@ -9,7 +9,7 @@ constexpr int BN = 64;
 constexpr int BK = 8;
 constexpr int TM = 8;
 
-__global__ void sgemm_1D_tile(int M, int K, int N, float alpha, const float *A, const float *B, float beta, float *C) {
+__global__ void sgemm_1D_blocktile(int M, int K, int N, float alpha, const float *A, const float *B, float beta, float *C) {
 
     __shared__ float As[BM * BK];
     __shared__ float Bs[BK * BN];
@@ -56,7 +56,7 @@ __global__ void sgemm_1D_tile(int M, int K, int N, float alpha, const float *A, 
     }
 }
 
-void launch_sgemm_1D_tile(torch::Tensor A, torch::Tensor B, torch::Tensor C, float alpha, float beta) {
+void launch_sgemm_1D_blocktile(torch::Tensor A, torch::Tensor B, torch::Tensor C, float alpha, float beta) {
     const int M = A.size(0);
     const int K = A.size(1);
     const int N = B.size(1);
@@ -64,6 +64,6 @@ void launch_sgemm_1D_tile(torch::Tensor A, torch::Tensor B, torch::Tensor C, flo
     dim3 block((BM * BN) / TM);   // e.g. 64*64/8 = 512 threads
     dim3 grid(CEIL_DIV(M, BM), CEIL_DIV(N, BN));
     cudaStream_t stream = c10::cuda::getCurrentCUDAStream();
-    sgemm_1D_tile<<<grid, block, 0, stream>>>(M, K, N, alpha, A.data_ptr<float>(), B.data_ptr<float>(), beta, C.data_ptr<float>());
+    sgemm_1D_blocktile<<<grid, block, 0, stream>>>(M, K, N, alpha, A.data_ptr<float>(), B.data_ptr<float>(), beta, C.data_ptr<float>());
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }

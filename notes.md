@@ -40,3 +40,17 @@ ptxas info    : Used 39 registers, used 1 barriers, 8192 bytes smem, 400 bytes c
 ptxas info    : Compile time = 77.160 ms
 ```
 TODO: Find what the kernel is limited by (shared memory/SM, the number of threads per block, the number of registers per thread). That'll give you the upper limit of how many block you can load per SM. Final occupancy can then be calculated as num active warps / max active warps per multiprocessor
+
+4) 1-D tiling
+```text
+    GPU: Tesla T4
+
+    ptxas info    : Used 68 registers, used 1 barriers, 4096 bytes smem, 400 bytes cmem[0]
+    ptxas info    : Compile time = 72.129 ms
+
+    sgemm_1D_tile  M=4096 K=4096 N=4096 alpha=1.0 beta=0.0
+    correct: True  (max abs err = 0.000e+00)
+    sgemm_1D_tile:     82.71 ms     1661.7 GFLOPS
+    cuBLAS      :     34.44 ms     3991.2 GFLOPS
+    sgemm_1D_tile is 41.6% of cuBLAS
+```

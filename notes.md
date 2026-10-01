@@ -15,6 +15,7 @@ DRAM-ideal intensity = 137.4e9 / 201e6 = 683 FLOP/byte
 Floor time (compute) = FLOPs / cuBLAS GFLOPS = 32.6 ms
 ```
 note: DRAM ideal intensity is far right of our ridge point, meaning DRAM roof will never be the reason our SGEMM kernel being slow. The question will always be which inner resource (L1/LSU, smem, FMA pipe, latency) runs out first. To simplify, ideally memory transfers = 201 / 236 = 0.85 ms, which is much smaller than the floor time
+___
 
 1) **Naive SGEMM**
 One thread per element of C, 4096^2 threads in total, each loads one row of matrix A and one col of matrix B and one element of C.
@@ -31,6 +32,7 @@ Memory traffic = $((2*4096 + 1)*4096^2) * 4$ = 550 GB! (compare with 201 MB idea
     sgemm_naive is 4.0% of cuBLAS
 ```
 > Limiter: poor global memory access pattern
+___
 
 2) **Global memory coalescing**
 Global memory is fetched in 32B "sectors" (a 128 B cache line is 4 sectors). When a warp's 32 floats are consecutive and aligned, the 128 B load is served by just 4 sectors; scattered addresses touch more sectors (up to 32), wasting bandwidth.
@@ -48,6 +50,7 @@ Per-warp iteration:
 - B load = 128 bytes utilised | 4 sectors
 **Bytes/sector:** 132/5 = 26.4 (compared to 4 bytes/sector in naive kernel)
 > Note: we're still at 2 flops/byte but the change in thread->output mapping helps us minimise GMEM accesses.
+___
 
 3) **Shared memory cache blocking**
 ```text
@@ -66,9 +69,32 @@ Compiling with --ptxas-options=-v:
 ptxas info    : Used 39 registers, used 1 barriers, 8192 bytes smem, 400 bytes cmem[0]
 ptxas info    : Compile time = 77.160 ms
 ```
-TODO: Find what the kernel is limited by (shared memory/SM, the number of threads per block, the number of registers per thread). That'll give you the upper limit of how many block you can load per SM. Final occupancy can then be calculated as num active warps / max active warps per multiprocessor
+Let's do some occupancy calc now. To do that, we need to find what the kernel is limited by (shared memory/SM, the number of threads per block, the number of registers per thread). That'll give you the upper limit of how many block you can load per SM. Final occupancy can then be calculated as num active warps / max active warps per multiprocessor.
 
-4) 1-D blocktiling
+| Property                       | Value        | Property                               | Value        |
+|--------------------------------|--------------|----------------------------------------|--------------|
+| Name                           | Tesla T4     | max regs per multiprocessor            | 65536        |
+| Compute Capability             | 7.5          | reg allocation unit size               | 256 (table)  |
+| max threads per block          | 1024         | reg allocation granularity             | warp (table) |
+| max threads per multiprocessor | 1024         | total global mem                       | 14912 MB     |
+| threads per warp               | 32           | max shared mem per block               | 48 KB        |
+| warp allocation granularity    | 4 (table)    | CUDA runtime shared mem overhead/block | 0 B (table)  |
+| max regs per block             | 65536        | shared mem per multiprocessor          | 65536 B      |
+| multiprocessor count           | 40           | max warps per multiprocessor           | 32           |
+
+- Shared memory: (65536B per SM) / (8192B per Block) = 8 Blocks upper limit
+- Threads: 1024 Threads per Block, max 1024 threads per SM => Upper limit 1 block
+- Registers: 39 regs per thread * 32 threads per warp = 1248 regs per warp. Register allocation granularity is 256 regs on a warp level, hence rounding up to 1280 regs per warp. We have 32 warps per block, so 40960 regs per block. Max 65536 regs per SM => upper limit 1 block
+
+So, we're limited by the number of threads per block, and the number of registers per thread. The theoretical occupancy is 100%. So, of that isnt a problem, there is probably some stalls happening
+
+As per the warp state statistics profile,
+> On average, each warp of this workload spends 27.3 cycles being stalled waiting for the MIO (memory input/output) instruction queue to be not full.
+
+The inner loop does 2 shared-memory loads (As, Bs) for every 1 FMA. The warps flood the queue with loads while the FMA units sit mostly idle. So, we could try to do more FMAs per shared-memory load.
+___
+
+4) **1-D blocktiling**
 ```text
     GPU: Tesla T4
 
@@ -81,17 +107,39 @@ TODO: Find what the kernel is limited by (shared memory/SM, the number of thread
     cuBLAS      :     34.44 ms     3991.2 GFLOPS
     sgemm_1D_tile is 41.6% of cuBLAS
 ```
+**Memory accesses per result:**
 
-5) 2D blocktiling
+(1 result per thread, 32*32 tile)
+- GMEM: the outer loop runs K/32 times, with 2 loads => K/16 per thread
+- SMEM: each outer iteration has an inner loop of 32 steps, and each step reads 1 As and 1 Bs value (2 loads) => K/32 × 32 × 2 = 2K
+
+(TM=8 results per thread, 64*64 tile, BK=8)
+- GMEM: the outer loop runs K/8 times, with 2 loads each => K/4 per thread. The thread makes 8 results, so per result it's K/32. (*2X fewer*)
+- SMEM: each outer iteration has 8 inner steps, and each step reads 1 Bs value (held in a register and reused) plus 8 As values, so 9 loads. That's K/8 × 8 × 9 = 9K per thread. Per result it's 9K ÷ 8 = 9K/8. (*1.8X fewer*)
+
+> On average, each warp of this workload spends 6.4 cycles being stalled waiting for the MIO (memory input/output) instruction queue to be not full.  
+
+(clearly an improvement)
+___
+5) **2D blocktiling**
+- (BM=BN=64, TM=TN=8): Arithmetic intensity = $(2*64*8*64)/(2*64*8*4)$ = 16 flop/byte
 ```text
     GPU: Tesla T4
-
     ptxas info    : Used 123 registers, used 1 barriers, 4096 bytes smem, 400 bytes cmem[0]
-    ptxas info    : Compile time = 103.930 ms
-
     sgemm_2D_blocktile  M=4096 K=4096 N=4096 alpha=1.0 beta=0.0
     correct: True  (max abs err = 0.000e+00)
     sgemm_2D_blocktile:     60.42 ms     2274.6 GFLOPS
     cuBLAS      :     32.29 ms     4255.9 GFLOPS
     sgemm_2D_blocktile is 53.4% of cuBLAS
+```
+- (BM=BN=128, TM=TN=8): Arithmetic intensity = $(2*128*8*128)/(2*128*8*4)$ = 32 flop/byte
+```text
+    GPU: Tesla T4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+    ptxas info    : Used 123 registers, used 1 barriers, 8192 bytes smem, 400 bytes cmem[0]
+    sgemm_2D_blocktile  M=4096 K=4096 N=4096 alpha=1.0 beta=0.0
+    correct: True  (max abs err = 0.000e+00)
+    sgemm_2D_blocktile:     43.00 ms     3196.0 GFLOPS
+    cuBLAS      :     32.24 ms     4262.9 GFLOPS
+    sgemm_2D_blocktile is 75.0% of cuBLAS
 ```

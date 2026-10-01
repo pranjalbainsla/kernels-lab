@@ -2,44 +2,50 @@
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_runtime.h>
 
-#define BLOCKSIZE 32
+// Tile edge: one thread block computes one TILE x TILE tile of C.
+// Block size is TILE * TILE threads, flattened to 1D.
+#define TILE 32
 #define CEIL_DIV(a, b) (((a) + (b) - 1) / (b))
 
 __global__ void sgemm_smem(int M, int K, int N, float alpha, const float *A, const float *B, float beta, float *C) {
 
-  __shared__ float As[BLOCKSIZE * BLOCKSIZE];
-  __shared__ float Bs[BLOCKSIZE * BLOCKSIZE];   
-  const int cRow = blockIdx.x;
-  const int cCol = blockIdx.y;
-  const int threadRow = threadIdx.x / BLOCKSIZE; // threadRow = threadIdx.y if we didnt flatten the block into 1D (for global memory coalescing)
-  const int threadCol = threadIdx.x % BLOCKSIZE; 
+  // Shared-memory tiles of A and B, reused by all threads in the block
+  __shared__ float As[TILE * TILE];
+  __shared__ float Bs[TILE * TILE];
 
-  A += cRow * BLOCKSIZE * K;                    
-  B += cCol * BLOCKSIZE;                        
-  C += cRow * BLOCKSIZE * N + cCol * BLOCKSIZE;
+  const int tileRow = blockIdx.x;
+  const int tileCol = blockIdx.y;
 
-  float tmp = 0.0;
-  
-  for (int bkIdx = 0; bkIdx < K; bkIdx += BLOCKSIZE) {
-    // TODO: add boundary checks to avoid out-of-bounds memory access
+  const int threadRow = threadIdx.x / TILE;
+  const int threadCol = threadIdx.x % TILE;
 
-    // Have each thread load one of the elements in A & B from
-    // global memory into shared memory.
-    // Make the threadCol (=threadIdx.x) the consecutive index
-    // to allow global memory access coalescing
-    As[threadRow * BLOCKSIZE + threadCol] = A[threadRow * K + threadCol];
-    Bs[threadRow * BLOCKSIZE + threadCol] = B[threadRow * N + threadCol];
-    
+  A += tileRow * TILE * K;
+  B += tileCol * TILE;
+  C += tileRow * TILE * N + tileCol * TILE;
+
+  // Accumulator lives in a register across all K-steps
+  float tmp = 0.0f;
+
+  for (int kTile = 0; kTile < K; kTile += TILE) {
+    // TODO: bounds checks; as written, M, N and K must be multiples of TILE
+
+    // each thread copies one element of the A tile and one of the B tile
+    // from global memory into shared memory
+    As[threadRow * TILE + threadCol] = A[threadRow * K + threadCol];
+    Bs[threadRow * TILE + threadCol] = B[threadRow * N + threadCol];
+
     __syncthreads();
 
-    A += BLOCKSIZE;
-    B += BLOCKSIZE * N;
+    A += TILE;
+    B += TILE * N;
 
-    for (int dotIdx = 0; dotIdx < BLOCKSIZE; ++dotIdx) {
-      tmp += As[threadRow * BLOCKSIZE + dotIdx] * Bs[dotIdx * BLOCKSIZE + threadCol];
+    // Each thread computes a partial dot product from shared memory
+    for (int k = 0; k < TILE; ++k) {
+      tmp += As[threadRow * TILE + k] * Bs[k * TILE + threadCol];
     }
-    // need to sync again at the end, to avoid faster threads
-    // fetching the next block into the cache before slower threads are done
+
+    // Barrier: don't let a fast thread overwrite the shared tiles
+    // for the next K-step while slower threads are still reading them
     __syncthreads();
   }
 
@@ -51,8 +57,8 @@ void launch_sgemm_smem(torch::Tensor A, torch::Tensor B, torch::Tensor C, float 
   const int K = A.size(1);
   const int N = B.size(1);
 
-  dim3 block(BLOCKSIZE * BLOCKSIZE);
-  dim3 grid((M + BLOCKSIZE - 1) / BLOCKSIZE, (N + BLOCKSIZE - 1) / BLOCKSIZE);
+  dim3 block(TILE * TILE);
+  dim3 grid(CEIL_DIV(M, TILE), CEIL_DIV(N, TILE));
   cudaStream_t stream = c10::cuda::getCurrentCUDAStream();
   sgemm_smem<<<grid, block, 0, stream>>>(M, K, N, alpha, A.data_ptr<float>(), B.data_ptr<float>(), beta, C.data_ptr<float>());
   C10_CUDA_KERNEL_LAUNCH_CHECK();

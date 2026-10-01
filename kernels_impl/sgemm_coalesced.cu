@@ -5,7 +5,7 @@
 #define BLOCKSIZE 32
 #define CEIL_DIV(a, b) (((a) + (b) - 1) / (b))
 
-__global__ void sgemm_coalesced(int M, int N, int K, float alpha, const float *A, const float *B, float beta, float *C) {
+__global__ void sgemm_coalesced(int M, int K, int N, float alpha, const float *A, const float *B, float beta, float *C) {
 
   const int x = blockIdx.x * BLOCKSIZE + (threadIdx.x / BLOCKSIZE); 
   const int y = blockIdx.y * BLOCKSIZE + (threadIdx.x % BLOCKSIZE);  

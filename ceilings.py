@@ -1,4 +1,10 @@
-import torch, time
+import argparse, torch, time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--M", type=int, default=4096)
+parser.add_argument("--N", type=int, default=4096)
+parser.add_argument("--K", type=int, default=4096)
+args = parser.parse_args()
 
 assert torch.cuda.is_available()
 device = torch.device("cuda")
@@ -30,7 +36,7 @@ print(f"[{gpu_name}] Measured bandwidth: {bandwidth_gbps:.1f} GB/s")
 
 # Ceiling 2: FP32 throughput via large cuBLAS matmul
 torch.backends.cuda.matmul.allow_tf32 = False  # force real FP32, not TF32
-M = N = K = 4096
+M, N, K = args.M, args.N, args.K
 a = torch.randn(M, K, device=device, dtype=torch.float32)
 b = torch.randn(K, N, device=device, dtype=torch.float32)
 

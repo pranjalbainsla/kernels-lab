@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 from torch.utils.cpp_extension import load_inline
 
 KERNELS = [
-    ("1 naive",         "kernel_impl/sgemm_naive.cu",       "launch_sgemm_naive"),
-    ("2 coalesced",     "kernel_impl/sgemm_coalesced.cu",   "launch_sgemm_coalesced"),
-    ("3 smem",          "kernel_impl/sgemm_smem.cu",        "launch_sgemm_smem"),
-    ("4 1D blocktile",  "kernel_impl/sgemm_1D_blocktile.cu", "launch_sgemm_1D_blocktile"),
-    ("5 2D blocktile",  "kernel_impl/sgemm_2D_blocktile.cu", "launch_sgemm_2D_blocktile"),
+    ("1 naive",         "kernels_impl/sgemm_naive.cu",       "launch_sgemm_naive"),
+    ("2 coalesced",     "kernels_impl/sgemm_coalesced.cu",   "launch_sgemm_coalesced"),
+    ("3 smem",          "kernels_impl/sgemm_smem.cu",        "launch_sgemm_smem"),
+    ("4 1D blocktile",  "kernels_impl/sgemm_1D_blocktile.cu", "launch_sgemm_1D_blocktile"),
+    ("5 2D blocktile",  "kernels_impl/sgemm_2D_blocktile.cu", "launch_sgemm_2D_blocktile"),
 ]
 SIZES = [256, 512, 1024, 2048, 3072, 4096]   # all multiples of 64
 WARMUP, ITERS = 3, 10

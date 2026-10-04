@@ -13,15 +13,15 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 3
+// REDUCTION 2
 __global__ void reduce3(int *in, int *out, int n){
     extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
 
     // Each thread loading one element from global onto shared memory
     unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x * 2 + threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < n) sdata[tid] = in[i] + ((i + blockDim.x < n) ? in[i + blockDim.x] : 0);
+    if (i < n) sdata[tid] = in[i];
     else sdata[tid] = 0;
 
     __syncthreads();
@@ -39,10 +39,14 @@ __global__ void reduce3(int *in, int *out, int n){
 }
 
 
+#ifndef LOG2N
+#define LOG2N 22  // override with nvcc -DLOG2N=<k>
+#endif
+
 int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
-    const int32_t n = 1 << 22;
+    const int32_t n = 1 << LOG2N;
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);
@@ -62,7 +66,6 @@ int main() {
     CHECK(cudaMemcpy(dev_in, host_in.data(), bytes, cudaMemcpyHostToDevice));
 
     int num_blocks = (n + blockSize - 1) / blockSize;
-    num_blocks = (num_blocks + 1) / 2; // since each block processes two elements per thread
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));

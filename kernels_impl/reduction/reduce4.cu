@@ -13,12 +13,7 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 4
-__device__ int warpReduce(int val) {
-    for (int offset = 16; offset > 0; offset >>= 1)
-        val += __shfl_down_sync(0xffffffff, val, offset);
-    return val;   // full sum ends up in lane 0
-}
+// REDUCTION 3
 __global__ void reduce4(int *in, int *out, int n){
     extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
 
@@ -32,23 +27,26 @@ __global__ void reduce4(int *in, int *out, int n){
     __syncthreads();
 
     // Reduction method -> occurs in shared memory
-    for (unsigned int s=blockDim.x/2; s>=32; s>>=1) {
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
       if (tid < s) {
         sdata[tid] += sdata[tid + s];
       }
       __syncthreads();
     }
-    if (tid < 32) {
-        int v = warpReduce(sdata[tid]);
-        if(tid == 0) atomicAdd(out, v); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
+    if (tid == 0){
+        atomicAdd(out, sdata[0]); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
     }
 }
 
 
+#ifndef LOG2N
+#define LOG2N 22  // override with nvcc -DLOG2N=<k>
+#endif
+
 int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
-    const int32_t n = 1 << 22;
+    const int32_t n = 1 << LOG2N;
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);

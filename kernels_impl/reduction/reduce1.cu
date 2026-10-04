@@ -13,7 +13,7 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 1
+// REDUCTION 0 – Interleaved Addressing with divergent branching
 __global__ void reduce1(int *in, int *out, int n){
     extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
 
@@ -28,9 +28,8 @@ __global__ void reduce1(int *in, int *out, int n){
 
     // Reduction method -> occurs in shared memory
     for(unsigned int s = 1; s < blockDim.x; s *= 2){
-        int index = 2 * s * tid;
-        if (index < blockDim.x) {
-            sdata[index] += sdata[index + s];
+        if (tid % (2 * s) == 0) {
+            sdata[tid] += sdata[tid + s];   
         }
         __syncthreads();
     }
@@ -40,10 +39,14 @@ __global__ void reduce1(int *in, int *out, int n){
 }
 
 
+#ifndef LOG2N
+#define LOG2N 22  // override with nvcc -DLOG2N=<k>
+#endif
+
 int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
-    const int32_t n = 1 << 22;
+    const int32_t n = 1 << LOG2N;
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);

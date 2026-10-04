@@ -13,7 +13,7 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 6
+// REDUCTION 5
 __device__ int warpReduce(int val) {
     for (int offset = 16; offset > 0; offset >>= 1)
         val += __shfl_down_sync(0xffffffff, val, offset);
@@ -26,13 +26,9 @@ __global__ void reduce6(int *in, int *out, int n){
     // Each thread loading one element from global onto shared memory
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
-    unsigned int gridSize = blockSize*2*gridDim.x;
-    sdata[tid] = 0;
 
-    while (i < n) {
-        sdata[tid] += in[i] + (i + blockSize < n ? in[i + blockSize] : 0);
-        i += gridSize;
-    }
+    if (i < n) sdata[tid] = in[i] + ((i + blockSize < n) ? in[i + blockSize] : 0);
+    else sdata[tid] = 0;
 
     __syncthreads();
 
@@ -50,10 +46,14 @@ __global__ void reduce6(int *in, int *out, int n){
 }
 
 
+#ifndef LOG2N
+#define LOG2N 22  // override with nvcc -DLOG2N=<k>
+#endif
+
 int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
-    const int32_t n = 1 << 22;
+    const int32_t n = 1 << LOG2N;
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);
@@ -72,10 +72,8 @@ int main() {
     CHECK(cudaMalloc(&dev_out, sizeof(int)));
     CHECK(cudaMemcpy(dev_in, host_in.data(), bytes, cudaMemcpyHostToDevice));
 
-    int num_blocks_needed = (n + 2 * blockSize - 1) / (2 * blockSize);
-    int sms;
-    CHECK(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-    int num_blocks = std::min(num_blocks_needed, sms * 8);
+    int num_blocks = (n + blockSize - 1) / blockSize;
+    num_blocks = (num_blocks + 1) / 2; // since each block processes two elements per thread
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));

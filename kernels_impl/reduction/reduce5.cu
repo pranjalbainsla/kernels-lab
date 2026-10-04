@@ -13,32 +13,31 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 5
+// REDUCTION 4
 __device__ int warpReduce(int val) {
     for (int offset = 16; offset > 0; offset >>= 1)
         val += __shfl_down_sync(0xffffffff, val, offset);
     return val;   // full sum ends up in lane 0
 }
-template <unsigned int blockSize>
 __global__ void reduce5(int *in, int *out, int n){
-    __shared__ int sdata[blockSize];  // stored in the shared memory; size known at compile time
+    extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
 
     // Each thread loading one element from global onto shared memory
     unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x * 2 + threadIdx.x;
 
-    if (i < n) sdata[tid] = in[i] + ((i + blockSize < n) ? in[i + blockSize] : 0);
+    if (i < n) sdata[tid] = in[i] + ((i + blockDim.x < n) ? in[i + blockDim.x] : 0);
     else sdata[tid] = 0;
 
     __syncthreads();
 
-    // blockSize is a compile-time constant, so this loop is fully unrolled
-    if (blockSize >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
-    if (blockSize >= 512) { if (tid < 256) { sdata[tid] += sdata[tid + 256]; } __syncthreads(); }
-    if (blockSize >= 256) { if (tid < 128) { sdata[tid] += sdata[tid + 128]; } __syncthreads(); }
-    if (blockSize >= 128) { if (tid < 64) { sdata[tid] += sdata[tid + 64]; } __syncthreads(); }
-    if (blockSize >= 64) { if (tid < 32) sdata[tid] += sdata[tid + 32]; __syncthreads(); }
-    
+    // Reduction method -> occurs in shared memory
+    for (unsigned int s=blockDim.x/2; s>=32; s>>=1) {
+      if (tid < s) {
+        sdata[tid] += sdata[tid + s];
+      }
+      __syncthreads();
+    }
     if (tid < 32) {
         int v = warpReduce(sdata[tid]);
         if(tid == 0) atomicAdd(out, v); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
@@ -46,16 +45,20 @@ __global__ void reduce5(int *in, int *out, int n){
 }
 
 
+#ifndef LOG2N
+#define LOG2N 22  // override with nvcc -DLOG2N=<k>
+#endif
+
 int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
-    const int32_t n = 1 << 22;
+    const int32_t n = 1 << LOG2N;
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);
 
     const int iters = 100;
-    constexpr unsigned int blockSize = 256;  // compile-time: passed to the kernel as a template parameter
+    const int blockSize = 256;  // runtime value; the kernel reads it from blockDim.x
 
     // Host data
     std::vector<int> host_in(n); // frees memory automatically when it goes out of scope
@@ -73,7 +76,7 @@ int main() {
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-    reduce5<blockSize><<<num_blocks, blockSize>>>(dev_in, dev_out, n);
+    reduce5<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
     CHECK(cudaGetLastError());
     CHECK(cudaDeviceSynchronize());
 
@@ -85,7 +88,7 @@ int main() {
     CHECK(cudaEventRecord(start));
     for (int i = 0; i < iters; ++i) {
         CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-        reduce5<blockSize><<<num_blocks, blockSize>>>(dev_in, dev_out, n);
+        reduce5<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
     }
     CHECK(cudaEventRecord(stop));
     CHECK(cudaEventSynchronize(stop));

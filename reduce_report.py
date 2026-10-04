@@ -1,8 +1,8 @@
-"""Builds every reduction kernel for N = 2^LOG2N elements, runs it, and prints a markdown table.
+"""Builds every reduction kernel for n = 2^log2n elements, runs it, and prints a markdown table.
 
 Usage:
-    python reduce_report.py --N 28     # compile all kernels with n = 1 << 28, run, print table
-    python reduce_report.py            # defaults to --N 22
+    python reduce_report.py --n 28     # compile all kernels with n = 1 << 28, run, print table
+    python reduce_report.py            # defaults to --n 22
 """
 import argparse
 import re
@@ -39,7 +39,7 @@ def build_and_run(stem, log2n, build_dir, nvcc_args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--N", type=int, default=22, help="log2 of the element count (n = 1 << N)")
+    ap.add_argument("--n", type=int, default=22, help="log2 of the element count (n = 1 << n)")
     ap.add_argument("--nvcc-args", nargs=argparse.REMAINDER, default=[],
                     help="extra nvcc flags, e.g. --nvcc-args -arch=sm_75 (must come last)")
     args = ap.parse_args()
@@ -47,8 +47,8 @@ def main():
     data = {}
     with tempfile.TemporaryDirectory() as tmp:
         for stem, name in KERNELS.items():
-            print(f"building and running {stem} (n = 1 << {args.N})...", file=sys.stderr)
-            data[name] = build_and_run(stem, args.N, Path(tmp), args.nvcc_args)
+            print(f"building and running {stem} (n = 1 << {args.n})...", file=sys.stderr)
+            data[name] = build_and_run(stem, args.n, Path(tmp), args.nvcc_args)
 
     times = [t for t, _ in data.values()]
     header = ("Kernel", "Time (ms)", "Bandwidth (GB/s)", "Step speedup", "Cumulative")

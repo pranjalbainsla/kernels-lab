@@ -79,7 +79,7 @@ int main() {
     int num_blocks_needed = (n + 2 * blockSize - 1) / (2 * blockSize);
     int sms;
     CHECK(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-    int num_blocks = std::min(num_blocks_needed, sms * 8);
+    int num_blocks = std::min(num_blocks_needed, sms * 32);
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));

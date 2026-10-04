@@ -47,3 +47,5 @@ t_matmul = timed(matmul_fn)
 flops = 2 * M * N * K
 tflops = flops / t_matmul / 1e12
 print(f"[{gpu_name}] Measured FP32 throughput: {tflops:.2f} TFLOPS")
+ridge = tflops * 1000 / bandwidth_gbps  # GFLOPS / (GB/s) = FLOP/byte
+print(f"Ridge point: {tflops*1000:.0f} GFLOPS / {bandwidth_gbps:.1f} GB/s = {ridge:.2f} FLOP/byte")

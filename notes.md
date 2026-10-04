@@ -3,7 +3,7 @@
 ```text
 Tesla T4: Measured bandwidth: 236.0 GB/s  (300-320 theoretical).
 Tesla T4: Measured FP32 throughput: 4.21 TFLOPS (8.1 theo). 
-Ridge point: 17 FLOP/byte
+Ridge point: 18 FLOP/byte
 ```
 > Ridge point is essentially the arithmetic intensity at which the memory roof and the compute roof meet. A kernel with AI below the ridge is limited by memory, and above it by compute.
 
@@ -12,16 +12,18 @@ Ridge point: 17 FLOP/byte
 FLOPs = 2MNK + MN = 137.4 GFLOP
 Minimum DRAM bytes = 4 * (MK + KN + MN) = 201 MB (A, B read once, C written once)
 DRAM-ideal intensity = 137.4e9 / 201e6 = 683 FLOP/byte
-Floor time (compute) = FLOPs / cuBLAS GFLOPS = 32.6 ms
+Compute floor = 137.4 GFLOP / 4.21 TFLOPS = 32.6 ms
+Memory floor = 201 MB / 236 GB/s = 0.85 ms
 ```
-note: DRAM ideal intensity is far right of our ridge point, meaning DRAM roof will never be the reason our SGEMM kernel being slow. The question will always be which inner resource (L1/LSU, smem, FMA pipe, latency) runs out first. To simplify, ideally memory transfers = 201 / 236 = 0.85 ms, which is much smaller than the floor time
+note: DRAM stops being a non-issue once traffic exceeds ~38x the ideal 201 MB (=7.6 GB), because the memory time then exceeds the compute floor (32.6 ms).
 ___
 
-### 1) **Naive SGEMM**
+### 1) Naive SGEMM
 
-- One thread per element of C, 4096^2 threads in total, each loads one row of matrix A and one col of matrix B and one element of C 
-- Memory traffic (assuming no caching) = $((2*4096 + 1)*4096^2) * 4$ = 550 GB! (compare with 201 MB ideal)
-- Arithmetic Intensity = 2 flops per 8 bytes = 0.25 flop/byte (vs our 17flop/byte)
+- **Mapping:** one thread per element of C (4096^2 threads). Each thread reads one row of A, one column of B, and writes one element of C.
+- **Traffic with no caching:** (2·4096 + 1) · 4096² · 4 B = 550 GB, vs 201 MB ideal.
+- **Traffic reported by the profiler:** 17.9 GB of DRAM reads, so the caches absorb most of the 550 GB. Even so, this exceeds the 38x threshold, and 17.9 GB / 236 GB/s = 76 ms of DRAM time alone is above the compute floor.
+- **Arithmetic intensity:** 2 flop per 8 bytes loaded = 0.25 FLOP/byte, far left of the ridge point (18 FLOP/byte), so let's focus on memory first.
 
 ```text
     GPU: Tesla T4
@@ -31,7 +33,8 @@ ___
     cuBLAS      :     33.71 ms     4065.5 GFLOPS
     sgemm_naive is 4.0% of cuBLAS
 ```
-> Limiter: poor global memory access pattern
+
+> **Limiter:** poor global memory access pattern. DRAM traffic is far above ideal, and the kernel makes 4.3 G global requests that mostly hit L1 and L2 instead of reusing data in shared memory.
 ___
 
 ### 2) **Global memory coalescing**

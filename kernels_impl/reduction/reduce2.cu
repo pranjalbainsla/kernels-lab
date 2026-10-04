@@ -13,8 +13,8 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 0 – Interleaved Addressing with divergent branching
-__global__ void reduce0(int *in, int *out, int n){
+// REDUCTION 2
+__global__ void reduce2(int *in, int *out, int n){
     extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
 
     // Each thread loading one element from global onto shared memory
@@ -27,11 +27,11 @@ __global__ void reduce0(int *in, int *out, int n){
     __syncthreads();
 
     // Reduction method -> occurs in shared memory
-    for(unsigned int s = 1; s < blockDim.x; s *= 2){
-        if (tid % (2 * s) == 0) {
-            sdata[tid] += sdata[tid + s];   
-        }
-        __syncthreads();
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+      if (tid < s) {
+        sdata[tid] += sdata[tid + s];
+      }
+      __syncthreads();
     }
     if (tid == 0){
         atomicAdd(out, sdata[0]); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
@@ -65,7 +65,7 @@ int main() {
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-    reduce0<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
+    reduce2<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
     CHECK(cudaGetLastError());
     CHECK(cudaDeviceSynchronize());
 
@@ -77,7 +77,7 @@ int main() {
     CHECK(cudaEventRecord(start));
     for (int i = 0; i < iters; ++i) {
         CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-        reduce0<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
+        reduce2<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
     }
     CHECK(cudaEventRecord(stop));
     CHECK(cudaEventSynchronize(stop));

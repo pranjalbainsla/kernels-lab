@@ -13,28 +13,35 @@
         std::exit(1); \
     } } while (0)
 
-// REDUCTION 0 – Interleaved Addressing with divergent branching
-__global__ void reduce0(int *in, int *out, int n){
-    extern __shared__ int sdata[];  // dynamic shared memory, sized to blockDim.x at launch
+// REDUCTION 5
+__device__ int warpReduce(int val) {
+    for (int offset = 16; offset > 0; offset >>= 1)
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    return val;   // full sum ends up in lane 0
+}
+template <unsigned int blockSize>
+__global__ void reduce5(int *in, int *out, int n){
+    __shared__ int sdata[blockSize];  // stored in the shared memory; size known at compile time
 
     // Each thread loading one element from global onto shared memory
     unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int i = blockIdx.x * blockSize * 2 + threadIdx.x;
 
-    if (i < n) sdata[tid] = in[i];
+    if (i < n) sdata[tid] = in[i] + ((i + blockSize < n) ? in[i + blockSize] : 0);
     else sdata[tid] = 0;
 
     __syncthreads();
 
-    // Reduction method -> occurs in shared memory
-    for(unsigned int s = 1; s < blockDim.x; s *= 2){
-        if (tid % (2 * s) == 0) {
-            sdata[tid] += sdata[tid + s];   
-        }
-        __syncthreads();
-    }
-    if (tid == 0){
-        atomicAdd(out, sdata[0]); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
+    // blockSize is a compile-time constant, so this loop is fully unrolled
+    if (blockSize >= 1024) { if (tid < 512) { sdata[tid] += sdata[tid + 512]; } __syncthreads(); }
+    if (blockSize >= 512) { if (tid < 256) { sdata[tid] += sdata[tid + 256]; } __syncthreads(); }
+    if (blockSize >= 256) { if (tid < 128) { sdata[tid] += sdata[tid + 128]; } __syncthreads(); }
+    if (blockSize >= 128) { if (tid < 64) { sdata[tid] += sdata[tid + 64]; } __syncthreads(); }
+    if (blockSize >= 64) { if (tid < 32) sdata[tid] += sdata[tid + 32]; __syncthreads(); }
+    
+    if (tid < 32) {
+        int v = warpReduce(sdata[tid]);
+        if(tid == 0) atomicAdd(out, v); // writes the partial sum back as one indivisible operation, so no other thread can interleave in the middle.
     }
 }
 
@@ -48,7 +55,7 @@ int main() {
     const size_t bytes = n * sizeof(int);
 
     const int iters = 100;
-    const int blockSize = 256;  // runtime value; the kernel reads it from blockDim.x
+    constexpr unsigned int blockSize = 256;  // compile-time: passed to the kernel as a template parameter
 
     // Host data
     std::vector<int> host_in(n); // frees memory automatically when it goes out of scope
@@ -62,10 +69,11 @@ int main() {
     CHECK(cudaMemcpy(dev_in, host_in.data(), bytes, cudaMemcpyHostToDevice));
 
     int num_blocks = (n + blockSize - 1) / blockSize;
+    num_blocks = (num_blocks + 1) / 2; // since each block processes two elements per thread
 
     // Warm-up (excludes context/launch overhead from timing)
     CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-    reduce0<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
+    reduce5<blockSize><<<num_blocks, blockSize>>>(dev_in, dev_out, n);
     CHECK(cudaGetLastError());
     CHECK(cudaDeviceSynchronize());
 
@@ -77,7 +85,7 @@ int main() {
     CHECK(cudaEventRecord(start));
     for (int i = 0; i < iters; ++i) {
         CHECK(cudaMemset(dev_out, 0, sizeof(int)));
-        reduce0<<<num_blocks, blockSize, blockSize * sizeof(int)>>>(dev_in, dev_out, n);
+        reduce5<blockSize><<<num_blocks, blockSize>>>(dev_in, dev_out, n);
     }
     CHECK(cudaEventRecord(stop));
     CHECK(cudaEventSynchronize(stop));

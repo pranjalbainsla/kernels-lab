@@ -5,17 +5,20 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 ## Results
 
 ### Parallel reduction
-2^28 int32 elements, 256 threads/block. Measured peak bandwidth: 278.17 GB/s
+- 2^28 int32 elements, 256 threads/block
+- Measured peak bandwidth: 278.17 GB/s (theoretical peak: 320 GB/s)
 
 | Kernel | Time (ms) | Bandwidth (GB/s) | Step speedup | Cumulative |
 |---|:---:|:---:|:---:|:---:|
-| 1: interleaved (divergent) | 18.4270 | 58.3 | | |
-| 2: interleaved (bank conflicts) | 14.4062 | 74.5 | 1.28x | 1.28x |
-| 3: sequential addressing | 12.0862 | 88.8 | 1.19x | 1.52x |
-| 4: first add during load | 6.6745 | 160.9 | 1.81x | 2.76x |
-| 5: unroll last warp | 5.3795 | 199.6 | 1.24x | 3.43x |
-| 6: completely unrolled | 4.6441 | 231.2 | 1.16x | 3.97x |
-| 7: multiple elements/thread | 4.2645 | 251.8 | 1.09x | 4.32x |
+| 1: interleaved (divergent) | 17.1257 | 62.7 |  |  |
+| 2: interleaved (bank conflicts) | 13.2998 | 80.7 | 1.29x | 1.29x |
+| 3: sequential addressing | 10.7794 | 99.6 | 1.23x | 1.59x |
+| 4: first add during load | 6.1437 | 174.8 | 1.75x | 2.79x |
+| 5: unroll last warp | 4.8255 | 222.5 | 1.27x | 3.55x |
+| 6: completely unrolled | 4.8757 | 220.2 | 0.99x | 3.51x |
+| 7: multiple elements/thread | 4.2383 | 253.3 | 1.15x | 4.04x |
+
+> Final kernel reaches 253.3 GB/s, about 91% of the measured peak (read-only) bandwidth ceiling 
 
 ### SGEMM
 <p align="center">
@@ -32,6 +35,7 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 | [run.py](run.py) | Builds one SGEMM kernel, checks it against `torch.matmul`, times it vs cuBLAS |
 | [plots/bench_plot_sgemm.py](plots/bench_plot_sgemm.py) | Sweeps SGEMM kernels over matrix sizes and produces the plot |
 | [ceilings.py](ceilings.py) | Measures the GPU's achievable memory bandwidth and FP32 throughput (roofline ceilings) |
+| [kernels_impl/reduction/bw_ceiling.cu](kernels_impl/reduction/bw_ceiling.cu) | Bandwidth ceiling (roof) for the reduction kernels. Kept separate from ceilings.py because reduction only reads, while ceilings.py measures a PyTorch copy (read + write), and this roof must use the same array size, block/grid size and timing loop as the reduce kernels to be a fair comparison |
 | [gpu_props.cu](gpu_props.cu) | Prints device properties (SM count, smem, registers) |
 | [notes.md](notes.md) | Roofline math and analysis notes |
 

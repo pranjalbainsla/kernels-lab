@@ -22,8 +22,8 @@ def timed(fn, warmup=10, iters=50):
     return (end - start) / iters
 
 # Ceiling 1: memory bandwidth via large-tensor copy
-n = 1 << 28  # ~256M floats = 1GB
-src = torch.randn(n, device=device)
+n = 1 << 28  # ~268M floats = 1GiB
+src = torch.randn(n, device=device, dtype=torch.float32)
 dst = torch.empty_like(src)
 
 def copy_fn():

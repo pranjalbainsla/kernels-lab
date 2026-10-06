@@ -5,7 +5,7 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 ## Results
 
 ### Parallel reduction
-2^28 int32 elements, 256 threads/block. Measured peak bandwidth: 236 GB/s.
+2^28 int32 elements, 256 threads/block. Measured peak bandwidth: 278.17 GB/s
 
 | Kernel | Time (ms) | Bandwidth (GB/s) | Step speedup | Cumulative |
 |---|:---:|:---:|:---:|:---:|

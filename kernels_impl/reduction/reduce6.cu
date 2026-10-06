@@ -54,6 +54,9 @@ int main() {
     // random fun fact: The C++ standard only guarantees at least 16 bits for int, 
     // but we want to be sure that we have 32 bits.
     const int32_t n = 1 << LOG2N;
+    // values in [0, MAX_VAL): keeps the int32 sum from overflowing, so the CPU/GPU check is meaningful
+    constexpr int MAX_VAL = 8;
+    static_assert((int64_t)(MAX_VAL - 1) * (1LL << LOG2N) <= INT32_MAX, "sum would overflow int32; lower MAX_VAL or LOG2N");
     // size_t matches the machine's address width
     // so it's 32 bits on 32-bit systems and 64 bits on 64-bit systems
     const size_t bytes = n * sizeof(int);
@@ -64,7 +67,7 @@ int main() {
     // Host data
     std::vector<int> host_in(n); // frees memory automatically when it goes out of scope
     srand(42);
-    for (int &x : host_in) x = rand() % 100;
+    for (int &x : host_in) x = rand() % MAX_VAL;
 
     // Device data 
     int *dev_in, *dev_out; // declare two pointers to int that will hold GPU (device) memory addresses

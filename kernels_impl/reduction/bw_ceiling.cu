@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <vector>
+#include <algorithm>
 #include <cstdlib>
 #include <cstdint>
 
@@ -51,7 +52,8 @@ int main() {
 
     int sms;
     CHECK(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
-    int num_blocks = std::min((n4 + blockSize - 1) / blockSize, sms * 32);
+    int num_blocks_needed = (n4 + blockSize - 1) / blockSize;
+    int num_blocks = std::min(num_blocks_needed, sms * 32);
 
     // Warm-up
     read_only<<<num_blocks, blockSize>>>(reinterpret_cast<const int4 *>(dev_in), dev_out, n4);

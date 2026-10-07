@@ -1,4 +1,4 @@
-import argparse, torch, time
+import argparse, statistics, torch
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--M", type=int, default=4096)
@@ -14,12 +14,16 @@ def timed(fn, warmup=10, iters=50):
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
-    start = time.perf_counter()
+    times = []
     for _ in range(iters):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
         fn()
-    torch.cuda.synchronize()
-    end = time.perf_counter()
-    return (end - start) / iters
+        end.record()
+        end.synchronize()
+        times.append(start.elapsed_time(end) / 1e3) 
+    return statistics.median(times)
 
 # Ceiling 1: memory bandwidth via large-tensor copy
 n = 1 << 28  # ~268M floats = 1GiB
@@ -36,6 +40,7 @@ print(f"[{gpu_name}] Measured bandwidth: {bandwidth_gbps:.1f} GB/s")
 
 # Ceiling 2: FP32 throughput via large cuBLAS matmul
 torch.backends.cuda.matmul.allow_tf32 = False  # force real FP32, not TF32
+# fun fact: the above line is irrelevant for T4 (Turing), since it doesnt support TF32 anyway
 M, N, K = args.M, args.N, args.K
 a = torch.randn(M, K, device=device, dtype=torch.float32)
 b = torch.randn(K, N, device=device, dtype=torch.float32)

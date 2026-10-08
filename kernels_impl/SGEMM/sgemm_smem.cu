@@ -19,6 +19,9 @@ __global__ void sgemm_smem(int M, int K, int N, float alpha, const float *A, con
   const int threadRow = threadIdx.x / TILE;
   const int threadCol = threadIdx.x % TILE;
 
+  const int x = tileRow * TILE + threadRow;  // row of C
+  const int y = tileCol * TILE + threadCol;  // col of C
+
   A += tileRow * TILE * K;
   B += tileCol * TILE;
   C += tileRow * TILE * N + tileCol * TILE;
@@ -27,14 +30,15 @@ __global__ void sgemm_smem(int M, int K, int N, float alpha, const float *A, con
   float tmp = 0.0f;
 
   for (int kTile = 0; kTile < K; kTile += TILE) {
-    // TODO: bounds checks; as written, M, N and K must be multiples of TILE
+    const int aCol = kTile + threadCol;  // col in A (K dimension)
+    const int bRow = kTile + threadRow;  // row in B (K dimension)
 
     // each thread copies one element of the A tile and one of the B tile
     // from global memory into shared memory
-    As[threadRow * TILE + threadCol] = A[threadRow * K + threadCol];
-    Bs[threadRow * TILE + threadCol] = B[threadRow * N + threadCol];
+    As[threadRow * TILE + threadCol] = (x < M && aCol < K) ? A[threadRow * K + threadCol] : 0.0f;
+    Bs[threadRow * TILE + threadCol] = (bRow < K && y < N) ? B[threadRow * N + threadCol] : 0.0f;
 
-    __syncthreads();
+    __syncthreads(); // so all warps finish writing to the shared memory before any warp starts reading
 
     A += TILE;
     B += TILE * N;
@@ -49,7 +53,9 @@ __global__ void sgemm_smem(int M, int K, int N, float alpha, const float *A, con
     __syncthreads();
   }
 
-  C[threadRow * N + threadCol] = alpha * tmp + beta * C[threadRow * N + threadCol];
+  if (x < M && y < N) {
+    C[threadRow * N + threadCol] = alpha * tmp + beta * C[threadRow * N + threadCol];
+  }
 }
 
 void launch_sgemm_smem(torch::Tensor A, torch::Tensor B, torch::Tensor C, float alpha, float beta) {

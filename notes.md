@@ -4,7 +4,6 @@ The goal is to write a performant CUDA SGEMM (C = αAB + βC, single precision) 
 
 A is M×K, B is K×N, C is M×N. All matrices are row-major. Benchmark shape: M = K = N = 4096.
 
----
 
 ## Back-of-the-envelope
 
@@ -34,7 +33,6 @@ Ideal AI (512) is far right of the ridge, so a nicely written SGEMM is firmly co
 
 (TODO: record driver and library versions, and note what each affects.)
 
----
 
 ## Kernel 1: Naive
 
@@ -61,7 +59,6 @@ Whether we get the best or worst case depends on how consecutive threads (consec
 
 The naive kernel maps `threadIdx.x` to the row index (Case 1). The fix is to swap the mapping so `threadIdx.x` indexes the column (Case 2).
 
----
 
 ## Kernel 2: Global memory coalescing
 
@@ -75,7 +72,6 @@ sgemm_coalesced is 14.4% of cuBLAS
 
 Coalescing makes each byte fetched from memory useful, but it does not reduce how many bytes each thread asks for. Each thread still loads 8 B per 2 FLOPs, so AI is still 0.25 FLOP/byte and we are still memory-bound. To raise AI we need threads to **share** loaded data, and the thing threads in a block can share is **shared memory**.
 
----
 
 ## Kernel 3: Shared-memory tiling
 
@@ -120,7 +116,6 @@ The binding limit is 1 block per SM, which is 32 warps out of a maximum of 32: *
 
 The MIO queue handles shared-memory instructions. Looking at the inner loop, each FMA needs one `As` load and one `Bs` load from shared memory: 2 shared-memory loads per FMA. The warps flood the queue with loads while the FMA units sit mostly idle. We moved the bottleneck from DRAM to shared memory. The next step is to do **more FMAs per shared-memory load**.
 
----
 
 ## Kernel 4: 1D block-tiling
 
@@ -152,7 +147,6 @@ One side effect worth noting: with 68 registers per thread and 512 threads per b
 
 We are still loading 9 values for 8 FMAs, about 1.1 shared loads per FMA. If each thread computed a 2D patch, that ratio would improve much further.
 
----
 
 ## Kernel 5: 2D block-tiling
 

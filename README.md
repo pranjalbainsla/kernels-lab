@@ -33,9 +33,6 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 | 5a | 2D block-tiling, 64×64 | shared-memory loads per FMA (2.0 → 0.25) | 2171.7 | 54.3% |
 | 5b | 2D block-tiling, 128×128 | global traffic per FLOP, warps per block, sync overhead (AI 16 → 32) | 2950.3 | 76.6% |
 
-<p align="center">
-  <img src="./plots/sgemm_vs_size_Tesla_T4.png" alt="SGEMM GFLOPS vs matrix size">
-</p>
 
 ## Where things are
 

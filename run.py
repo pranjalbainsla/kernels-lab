@@ -13,7 +13,7 @@ from pathlib import Path
 import torch
 from torch.utils.cpp_extension import load_inline
 
-KERNEL_DIR = Path(__file__).parent / "kernels_impl"
+KERNEL_DIR = Path(__file__).parent / "kernels_impl/SGEMM"
 
 
 def build(kernel: str, verbose: bool = False):
@@ -72,7 +72,7 @@ def main():
     args = p.parse_args()
 
     assert torch.cuda.is_available(), "No GPU found"
-    torch.backends.cuda.matmul.allow_tf32 = False  # fair FP32 cuBLAS baseline
+    torch.backends.cuda.matmul.allow_tf32 = False  # fair FP32 cuBLAS baseline, irrelevant for T4 (Turing) since it doesn't support TF32 anyway
     print("GPU:", torch.cuda.get_device_name(0))
 
     launch = build(args.kernel, verbose=args.verbose)

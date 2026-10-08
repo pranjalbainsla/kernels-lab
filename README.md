@@ -21,6 +21,18 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 > Final kernel reaches 253.3 GB/s, about 91% of the measured peak (read-only) bandwidth ceiling 
 
 ### SGEMM
+- M = K = N = 4096, alpha = 1, beta = 0
+- Each kernel is timed against cuBLAS in the same run
+
+| # | Kernel | Limiter it addressed | GFLOPS | % of cuBLAS |
+|---|---|---|---|---|
+| 1 | Naive | (baseline; uncoalesced global loads) | 61.7 | 1.7% |
+| 2 | Coalesced | wasted sectors per request | 540.7 | 14.4% |
+| 3 | Shared-memory tiling | no data reuse across threads (AI 0.25 -> 8) | 890.0 | 22.6% |
+| 4 | 1D block-tiling | shared-memory loads per FMA (MIO stalls) | 1548.1 | 40.0% |
+| 5a | 2D block-tiling, 64×64 | shared-memory loads per FMA (2.0 → 0.25) | 2171.7 | 54.3% |
+| 5b | 2D block-tiling, 128×128 | global traffic per FLOP, warps per block, sync overhead (AI 16 → 32) | 2950.3 | 76.6% |
+
 <p align="center">
   <img src="./plots/sgemm_vs_size_Tesla_T4.png" alt="SGEMM GFLOPS vs matrix size">
 </p>
@@ -34,15 +46,13 @@ Hand-written CUDA kernels, each optimized step by step and benchmarked against a
 | [reduce_report.py](reduce_report.py) | Builds and runs all reduction kernels and prints the table above |
 | [run.py](run.py) | Builds one SGEMM kernel, checks it against `torch.matmul`, times it vs cuBLAS |
 | [plots/bench_plot_sgemm.py](plots/bench_plot_sgemm.py) | Sweeps SGEMM kernels over matrix sizes and produces the plot |
-| [ceilings.py](ceilings.py) | Measures the GPU's achievable memory bandwidth and FP32 throughput (roofline ceilings) |
-| [kernels_impl/reduction/bw_ceiling.cu](kernels_impl/reduction/bw_ceiling.cu) | Bandwidth ceiling (roof) for the reduction kernels. Kept separate from ceilings.py because reduction only reads, while ceilings.py measures a PyTorch copy (read + write), and this roof must use the same array size, block/grid size and timing loop as the reduce kernels to be a fair comparison |
+| [kernels_impl/reduction/bw_ceiling.cu](kernels_impl/reduction/bw_ceiling.cu) | Bandwidth ceiling (roof) for the reduction kernels. This roof must use the same array size, block/grid size and timing loop as the reduce kernels to be a fair comparison |
 | [gpu_props.cu](gpu_props.cu) | Prints device properties (SM count, smem, registers) |
 | [notes.md](notes.md) | Roofline math and analysis notes |
 
 ## Reproduce
 
 ```bash
-python ceilings.py                 # hardware ceilings
 python reduce_report.py --n 28     # reduction table
 python run.py --kernel sgemm_naive --M 4096 --N 4096 --K 4096
 python plots/bench_plot_sgemm.py   # SGEMM plot
